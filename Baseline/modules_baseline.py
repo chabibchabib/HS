@@ -26,9 +26,7 @@ def Hs_Expand(image,factor):
     N, M = image.shape
     newN = int(N * factor)
     newM = int(M * factor)
-    #G = gaussian_kernel(0.15)
     newImage =cv.resize(image, (newM,newN), interpolation = cv.INTER_LINEAR).astype(float)
-    #newImage=convolve2d(newImage,G,mode='same')
     return newImage
 
 
@@ -36,14 +34,13 @@ def Hs_extract(Image,factor):
     N, M = Image.shape
     newN = int(N/ factor)
     newM = int(M / factor)
-    #G = gaussian_kernel(sigma)
     newImage =cv.resize(Image, (newM,newN), interpolation = cv.INTER_LINEAR ).astype(float)
-    #newImage=convolve2d(newImage,G,mode='same')
     return newImage
 #############################################################################
 def image_derivatives(img1, img2):
     # Computing Image derivatives 
-    Gx = np.array([[-1, 1], [-1, 1]]) * 0.25
+    #Gx = np.array([[-1, 1], [-1, 1]]) * 0.25
+    Gx=float(1/12)* np.array([-1 8 0 -8 1])
     Gy = np.array([[-1, -1], [1, 1]]) * 0.25
     Gt = np.ones((2, 2)) * 0.25
     fx = filter2(img1,Gx) + filter2(img2,Gx)
@@ -52,10 +49,11 @@ def image_derivatives(img1, img2):
     return [fx,fy, ft]
 
 
-def computeHS(beforeImg, afterImg, alpha, delta,itmax,u,v):
+def computeHS(beforeImg, afterImg, alpha, delta,itmax,u,v,kernel_size,downsampling_gauss):
     #removing noise
-    beforeImg  = cv.GaussianBlur(beforeImg, (5, 5), 0)
-    afterImg = cv.GaussianBlur(afterImg, (5, 5), 0)
+    deviation_gausse=float(1/math.sqrt(2*downsampling_gauss))
+    beforeImg  = cv.GaussianBlur(beforeImg, ksize=(kernel_size, kernel_size), sigmaX=deviation_gausse,sigmaY=0)
+    afterImg = cv.GaussianBlur(afterImg,ksize=(kernel_size, kernel_size), sigmaX=deviation_gausse,sigmaY=0)
 
     # set up initial values
 
@@ -85,11 +83,9 @@ def computeHS(beforeImg, afterImg, alpha, delta,itmax,u,v):
     #draw_quiver(u, v, beforeImg)
     return [u, v]
 ###################################################################
-def Hs_pyram(beforImage,afterImage,factor,alpha,delta,Level,itmax):
+def Hs_pyram(beforImage,afterImage,factor,alpha,delta,Level,itmax,kernel_size,downsampling_gauss):
     for lev in range(Level-1,-1,-1):
-        
-        #(local_N,local_M)=image1.shape
-        #print('lev:',lev,'image shape:',image0.shape)
+
         if lev==(Level-1):
             image0=Hs_extract(beforImage,factor**lev)
             image1=Hs_extract(afterImage,factor**lev)
@@ -97,13 +93,13 @@ def Hs_pyram(beforImage,afterImage,factor,alpha,delta,Level,itmax):
             v0 = np.zeros((image0.shape[0], image0.shape[1]))
             print('shape of u0',u0.shape)
         print('debut lev',lev)
-        u,v=computeHS(image0,image1, alpha, delta,itmax,u0,v0)
+        u,v=computeHS(image0,image1, alpha, delta,itmax,u0,v0,kernel_size,downsampling_gauss)
         #draw_quiver(u, v, beforeImg)
         print('fin lev',lev)
         (local_N,local_M)=image1.shape
         #if (lev !=0):
-        u0=factor*cv.resize(u, (local_M*factor,local_N*factor), interpolation = cv.INTER_LINEAR)
-        v0=factor*cv.resize(v, (local_M*factor,local_N*factor), interpolation = cv.INTER_LINEAR)
+        u0=factor*cv.resize(u, (int(local_M*factor),int(local_N*factor)), interpolation = cv.INTER_LINEAR)
+        v0=factor*cv.resize(v, (int(local_M*factor),int(local_N*factor)), interpolation = cv.INTER_LINEAR)
         image0=Hs_Expand(image0,factor)
         image1=Hs_Expand(image1,factor)
         #print(u.shape)
@@ -145,17 +141,10 @@ def draw_quiver(u,v,beforeImg):
 
     plt.draw()
     plt.show()
-######################################################################
 
-afterImg = cv.imread('image2.png', 0).astype(float)
-beforeImg = cv.imread('image1.png', 0).astype(float)
-
-#beforeImg  = cv.GaussianBlur(beforeImg, (5, 5), 0)
-#afterImg = cv.GaussianBlur(afterImg, (5, 5), 0)
-print('image0 shape',afterImg.shape)
-
-u,v = Hs_pyram(beforeImg, afterImg,factor=2, alpha = 15, delta = 10**-1,Level=3,itmax=900)
-draw_quiver(u, v, beforeImg)
-
-
-
+######################################################
+def determine_numLevels(image,factor):
+    # factor must be >1 
+    a=np.min(image.shape)
+    lev=math.log((a/25))/math.log(factor)
+    return int(lev)
