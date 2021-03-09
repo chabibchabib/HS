@@ -78,11 +78,10 @@ def computeHS(beforeImg, afterImg, alpha, delta,itmax):
 
         diff = np.linalg.norm(u - prev, 2)
         print('erreur=',diff)
-        #converges check (at most 300 iterations)
         if  diff < delta or iter_counter > itmax:
             print("iteration number: ", iter_counter)
             break
-    draw_quiver(u, v, beforeImg)
+    #draw_quiver(u, v, beforeImg)
 
     return [u, v]
 
