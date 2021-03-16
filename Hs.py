@@ -81,15 +81,14 @@ def computeHS(beforeImg, afterImg, alpha, delta,itmax):
         if  diff < delta or iter_counter > itmax:
             print("iteration number: ", iter_counter)
             break
-    #
+
 
     return [u, v]
 
-beforeImg = cv2.imread('img_000000_18.02244.tiff', 0).astype(float)
-afterImg = cv2.imread('img_000050_30.42245.tiff', 0).astype(float)
-#afterImg = cv2.imread('image2.png', 0).astype(float)
-#beforeImg = cv2.imread('image1.png', 0).astype(float)
+beforeImg = cv2.imread('img_000000_18.02244.tif', 0).astype(float)
+afterImg = cv2.imread('img_000050_30.42245.tif', 0).astype(float)
 
-#u,v = computeHS(beforeImg, afterImg, alpha = 15, delta = 10**-1,itmax=800)
-u,v = computeHS(beforeImg, afterImg, alpha = 15, delta = 10**-1,itmax=8)
+
+u,v = computeHS(beforeImg, afterImg, alpha = 15, delta = 2*10**-1,itmax=800)
+
 draw_quiver(u, v, beforeImg)
