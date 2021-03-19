@@ -6,6 +6,7 @@ from scipy.ndimage import  median_filter
 import matplotlib.pyplot as plt
 import math 
 import Hs
+from  scipy.signal import medfilt
 #############################################
 def Expand(image,factor):
     ''' Expand image by facor times'''
@@ -76,7 +77,7 @@ def warping_step(beforeImg, afterImg, alpha, delta,u,v,kernel_size,downsampling_
     # set up initial values
 
     fx, fy, ft = derivatives(beforeImg,afterImg,u,v,h,b)
-
+    u0=u; v0=v;
     avg_kernel = np.array([[1 / 12, 1 / 6, 1 / 12],
                             [1 / 6, 0, 1 / 6],
                             [1 / 12, 1 / 6, 1 / 12]], np.float)
@@ -87,9 +88,14 @@ def warping_step(beforeImg, afterImg, alpha, delta,u,v,kernel_size,downsampling_
         d =  alpha + fx**2 + fy**2
         u = u_avg - fx * (p / d)
         v = v_avg - fy * (p / d)
-        
-    u=median_filter(u,size=5)
-    v=median_filter(v,size=5)
+        print('AVE',np.linalg.norm(u-u0)/np.linalg.norm(u)+np.linalg.norm(v-v0)/np.linalg.norm(v))
+        u0=u
+        v0=v
+        #u=median_filter(u,size=5)
+        #v=median_filter(v,size=5)
+    u=medfilt(u,kernel_size=5)
+    v=medfilt(v,kernel_size=5)
+    
     #u=Expand(u,factor)
     #v=Expand(v,factor)
 
@@ -133,8 +139,8 @@ def get_magnitude(u, v):
     sum = 0.0
     counter = 0.0
 
-    for i in range(0, u.shape[0], 40):
-        for j in range(0, u.shape[1],40):
+    for i in range(0, u.shape[0], 8):
+        for j in range(0, u.shape[1],8):
             counter += 1
             dy = v[i,j] * scale
             dx = u[i,j] * scale
@@ -152,8 +158,8 @@ def draw_quiver(u,v,beforeImg):
 
     magnitudeAvg = get_magnitude(u, v)
 
-    for i in range(0, u.shape[0], 40):
-        for j in range(0, u.shape[1],40):
+    for i in range(0, u.shape[0], 8):
+        for j in range(0, u.shape[1],8):
             dy = v[i,j] * scale
             dx = u[i,j] * scale
             magnitude = (dx**2 + dy**2)**0.5
