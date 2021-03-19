@@ -4,8 +4,9 @@ from numpy.core.numeric import zeros_like
 import scipy.ndimage
 import cv2
 from math import ceil,floor
-#from scipy.ndimage.filters import convolve 
+from scipy.ndimage.filters import convolve as filter2
 from scipy.sparse import spdiags
+from scipy.signal import medfilt
 
 def conv_matrix(F,sz):
     '''Fshape=np.array(F.shape)
@@ -45,6 +46,7 @@ def deriv_quadra_over_x(x,sigma):
     return y
 ########################################################
 def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
+    ''' Using Lorentzian function '''
     #sz=(Ix.shape[0],Ix.shape[1])
     sz=np.shape(Ix)
     npixels=Ix.shape[1]*Ix.shape[0]
@@ -91,7 +93,103 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
     b=np.matmul(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) ) 
     #print(b[:10])
     #print(np.matmul(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )))
-    return [A,b]
+    if( ((np.max(pp_su)-np.max(pp_su)<1E-06)   ) and ((np.max(pp_sv)-np.max(pp_sv)<1E-06)   ) and ((np.max(pp_d)-np.max(pp_d)<1E-06)   ) ):
+        iterative=False
+    else:
+        iterative=True
+    return [A,b,iterative]
+#############################################################
+def flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda):
+    '''using quadratic function ''' 
+    #sz=(Ix.shape[0],Ix.shape[1])
+    sz=np.shape(Ix)
+    npixels=Ix.shape[1]*Ix.shape[0]
+    print(npixels)
+    FU=np.zeros((npixels,npixels))
+    FV=np.zeros((npixels,npixels))
+    quadr_ov_x=np.vectorize(deriv_quadra_over_x)
+    for i in range(len(S)):
+        M=conv_matrix(S[i],sz)
+        #print(M)
+        u_=np.matmul(M,np.reshape((u+du),(npixels,1),'F'))
+        v_=np.matmul(M,np.reshape((v+dv),(npixels,1),'F'))
+        #pp_su=deriv_quadra_over_x(u_,1)
+        #pp_sv=deriv_quadra_over_x(v_,1)
+        pp_su=quadr_ov_x(u_,1)
+        pp_sv=quadr_ov_x(v_,1)
+        #print(pp_sv)
+        
+        FU        = FU+ np.matmul(M.T,np.matmul(spdiags(pp_su.T, 0, npixels, npixels).toarray(),M));
+        FV        = FV+ np.matmul(M.T,np.matmul(spdiags(pp_sv.T, 0, npixels, npixels).toarray(),M));
+    
+    MM = np.vstack( (np.hstack ( ( -FU, np.zeros((npixels,npixels)) ) )  ,  np.hstack( ( np.zeros((npixels,npixels)) , -FV ) )  ))  
+    #print('MM')
+    #print(MM)
+    Ix2 = Ix*Ix
+    Iy2 = Iy*Iy
+    Ixy = Ix*Iy
+    Itx = It*Ix
+    Ity = It*Iy
+
+    It = It + Ix*du+ Iy*dv;
+    
+    pp_d=deriv_quadra_over_x(np.reshape(It,(npixels,1),'F'),(1.5/0.03))
+    
+    tmp=pp_d*np.reshape(Ix2,(npixels,1),'F')
+    duu = spdiags(tmp.T, 0, npixels, npixels).toarray()
+    
+    tmp = pp_d*np.reshape(Iy2,(npixels,1),'F')
+    
+    dvv = spdiags(tmp.T, 0, npixels, npixels).toarray()
+    
+    tmp = pp_d*np.reshape(Ixy,(npixels,1),'F')
+    
+    dduv = spdiags(tmp.T, 0, npixels, npixels).toarray()
+
+    A = np.vstack( (np.hstack ( ( duu, dduv ) )  ,  np.hstack( ( dduv , dvv ) )  )) - lmbda*MM
+    b=np.matmul(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) ) 
+    #print(b[:10])
+    #print(np.matmul(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )))
+    if( ((np.max(pp_su)-np.max(pp_su)<1E-06)   ) and ((np.max(pp_sv)-np.max(pp_sv)<1E-06)   ) and ((np.max(pp_d)-np.max(pp_d)<1E-06)   ) ):
+        iterative=False
+    else:
+        iterative=True
+    return [A,b,iterative]
+#############################################################
+def  compute_flow_base(max_iter,max_linear_iter,u,v,alpha,lmbda,S,size_median_filter):
+    for i in range(max_iter):
+        du=np.zeros((u.shape)); dv=np.zeros((v.shape))
+        npixels=u.shape[0]*u.shape[1]
+        #[It Ix Iy] = partial_deriv(this.images, uv
+        for j in range(max_linear_iter):
+            if (alpha==1):
+                #[A,b,iterative]=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
+                [A,b,iterative]=flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda)
+            elif((alpha>0)  and (alpha !=1) ):
+                [A,b,iterative]=flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda)
+                [A1,b1,iterative1]=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
+                
+                A=alpha*A+(1-alpha)*A1
+                b=alpha*b+(1-alpha)*b1
+            elif(alpha==0):
+                [A,b,iterative]=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
+            
+            x=np.matmul(np.linalg.inv(A),b)
+            du=np.reshape(x[0:npixels], (u.shape[0],u.shape[1]),'F' )
+            dv=np.reshape(x[npixels:2*npixels], (u.shape[0],u.shape[1]),'F' )
+            (u0,v0)=(u,v)
+            (u,v)=(u+du,v+dv)
+
+            u=medfilt(u,size_median_filter)
+            v=medfilt(v,size_median_filter)
+            du = u- u0
+            dv = v- v0
+            u= u0
+            v=v0
+
+        u = u + du
+        v = v + dv
+    return [u,v]
 
 
 #############################################################
@@ -125,6 +223,7 @@ du=np.zeros((u.shape))
 dv=np.zeros((u.shape))
 lmbda=1
 print('shape',u.shape)
-A,b=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
+#A,b,iterative=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
 #print('A',A[0,:10])
-print('b',b)
+#print(iterative)
+compute_flow_base(10,1,u,v,0.5,lmbda,S,5)
