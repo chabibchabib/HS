@@ -17,18 +17,22 @@ def warp_image2(Image,XI,YI,h):
     XI=np.array(XI,np.float32)
     YI=np.array(YI,np.float32)
     WImage=cv2.remap(Image,XI,YI,interpolation=cv2.INTER_CUBIC)
-    Ix=filter2(WImage, h)
-    Iy=filter2(WImage, h.T)
+    print('warped')
+    print(WImage[0:10,0:10])
+    Ix=filter2(Image, h)
+    Iy=filter2(Image, h.T)
     
     Iy=cv2.remap(Iy,XI,YI,interpolation=cv2.INTER_CUBIC)   
     Ix=cv2.remap(Ix,XI,YI,interpolation=cv2.INTER_CUBIC)
+    print('I2x')
+    print(Ix[0:10,0:10])
+    print('I2y')
+    print(Iy[0:10,0:10])
     return [WImage,Ix,Iy]
     
 ############################################
 def derivatives(Image1,Image2,u,v,h,b):
     N,M=Image1.shape
-    #x = np.array(range(N))
-    #y = np.array(range(M))
     y=np.linspace(0,N-1,N)
     x=np.linspace(0,M-1,M)
     x,y=np.meshgrid(x,y)
@@ -36,14 +40,15 @@ def derivatives(Image1,Image2,u,v,h,b):
     Iy=np.zeros((N,M))
     x=x+u; y=y+v
     WImage,I2x,I2y=warp_image2(Image2,x,y,h)  # Derivatives of the secnd image 
-    '''Gt = np.ones((2, 2)) * 0.25
-    It = filter2(Image1, -Gt) + filter2(WImage, Gt)'''
+
     It= WImage-Image1 # Temporal deriv
     
     Ix=filter2(Image1, h) # spatial derivatives for the first image 
     Iy=filter2(Image1, h.T)
-    #print("shapes",np.array(0.5*Ix).shape)
-    #print('bshape',b)
+    print('I1x')
+    print(Ix[0:10,0:10])
+    print('I1y')
+    print(Iy[0:10,0:10])
     Ix  = b*I2x+(1-b)*Ix           # Averaging 
     Iy  = b*I2y+(1-b)*Iy
 
@@ -73,10 +78,10 @@ def conv_matrix(F,sz):
         valid[size[0,0]-1,:]=0
         pad_valid[6,:]=0'''
     #M=np.zeros((sz[0]*sz[1],sz[0]*sz[1])) 
-    M=sparse.csr_matrix( ( sz[0]*sz[1],sz[0]*sz[1] ),dtype=np.float32)
+    M=sparse.lil_matrix( ( sz[0]*sz[1],sz[0]*sz[1] ),dtype=np.float32)
     if( F.shape==(1,2)):
         for i in range(sz[0],sz[0]*sz[1]):      
-            M[i,i-sz[0]]=-1;      
+            M[i,i-sz[0]]=-1     
         for i in range(sz[0],sz[0]*sz[1]): 
             M[i,i]=1
     elif(F.shape==(2,1)):
@@ -89,49 +94,37 @@ def conv_matrix(F,sz):
     return M
 ########################################################
 def deriv_lorentz_over_x(x,sigma):
-     y = 2 / (2 * sigma**2 + x**2);
+     y = 2 / (2 * sigma**2 + x**2)
      return y
 def deriv_quadra_over_x(x,sigma):
-    y = 2 / (sigma**2);
+    y = 2 / (sigma**2)
     return y
 ########################################################
 def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
     ''' Using Lorentzian function '''
-    #sz=(Ix.shape[0],Ix.shape[1])
     sz=np.shape(Ix)
     npixels=Ix.shape[1]*Ix.shape[0]
-    #print(npixels)
-    #FU=np.zeros((npixels,npixels))
-    #FV=np.zeros((npixels,npixels))
-    FU=sparse.csr_matrix((npixels,npixels),dtype=np.float32)
-    FV=sparse.csr_matrix((npixels,npixels),dtype=np.float32)
+    
+    FU=sparse.lil_matrix((npixels,npixels),dtype=np.float32)
+    FV=sparse.lil_matrix((npixels,npixels),dtype=np.float32)
     for i in range(len(S)):
         M=conv_matrix(S[i],sz)
-        #print(M)
-        '''u_=np.matmul(M,np.reshape((u+du),(npixels,1),'F'))
-        v_=np.matmul(M,np.reshape((v+dv),(npixels,1),'F'))'''
-        u_=sparse.csr_matrix.dot(M,np.reshape((u+du),(npixels,1),'F'))
-        v_=sparse.csr_matrix.dot(M,np.reshape((v+dv),(npixels,1),'F'))
+        u_=sparse.lil_matrix.dot(M,np.reshape((u+du),(npixels,1),'F'))
+        v_=sparse.lil_matrix.dot(M,np.reshape((v+dv),(npixels,1),'F'))
         pp_su=deriv_lorentz_over_x(u_,0.03)
         pp_sv=deriv_lorentz_over_x(v_,0.03)
-        #print(pp_sv)
         
-        '''FU        = FU+ np.matmul(M.T,np.matmul(spdiags(pp_su.T, 0, npixels, npixels).toarray(),M));
-        FV        = FV+ np.matmul(M.T,np.matmul(spdiags(pp_sv.T, 0, npixels, npixels).toarray(),M));'''
-        FU        = FU+ sparse.csr_matrix.dot(M.T,sparse.csr_matrix.dot(spdiags(pp_su.T, 0, npixels, npixels),M));
-        FV        = FV+ sparse.csr_matrix.dot(M.T,sparse.csr_matrix.dot(spdiags(pp_sv.T, 0, npixels, npixels),M));
-    #MM = np.vstack( (np.hstack ( ( -FU, np.zeros((npixels,npixels)) ) )  ,  np.hstack( ( np.zeros((npixels,npixels)) , -FV ) )  ))  
-    MM = sparse.vstack( (sparse.hstack ( ( -FU, sparse.csr_matrix((npixels,npixels)) ) )  ,  sparse.hstack( ( sparse.csr_matrix((npixels,npixels)) , -FV ) )  ))  
+        FU        = FU+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_su.T, 0, npixels, npixels),M))
+        FV        = FV+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_sv.T, 0, npixels, npixels),M))
+    MM = sparse.vstack( (sparse.hstack ( ( -FU, sparse.lil_matrix((npixels,npixels)) ) )  ,  sparse.hstack( ( sparse.lil_matrix((npixels,npixels)) , -FV ) )  ))  
 
-    #print('MM')
-    #print(MM)
     Ix2 = Ix*Ix
     Iy2 = Iy*Iy
     Ixy = Ix*Iy
     Itx = It*Ix
     Ity = It*Iy
 
-    It = It + Ix*du+ Iy*dv;
+    It = It + Ix*du+ Iy*dv
     
     pp_d=deriv_lorentz_over_x(np.reshape(It,(npixels,1),'F'),1.5)
     
@@ -146,13 +139,8 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
     
     dduv = spdiags(tmp.T, 0, npixels, npixels)
 
-    '''A = np.vstack( (np.hstack ( ( duu, dduv ) )  ,  np.hstack( ( dduv , dvv ) )  )) - lmbda*MM
-    b=np.matmul(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) ) 
-    #print(b[:10])'''
     A = sparse.vstack( (sparse.hstack ( ( duu, dduv ) )  ,  sparse.hstack( ( dduv , dvv ) )  )) - lmbda*MM
-    b=sparse.csr_matrix.dot(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) 
-    - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) )
-    #print(np.matmul(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )))
+    b=sparse.lil_matrix.dot(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) )
     if( ((np.max(pp_su)-np.max(pp_su)<1E-06)   ) and ((np.max(pp_sv)-np.max(pp_sv)<1E-06)   ) and ((np.max(pp_d)-np.max(pp_d)<1E-06)   ) ):
         iterative=False
     else:
@@ -161,40 +149,33 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
 #############################################################
 def flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda):
     '''using quadratic function ''' 
-    #sz=(Ix.shape[0],Ix.shape[1])
     sz=np.shape(Ix)
     npixels=Ix.shape[1]*Ix.shape[0]
-    #print(npixels)
-    #FU=np.zeros((npixels,npixels),dtype=np.float32)
-    #FV=np.zeros((npixels,npixels),dtype=np.float32)
-    FU=sparse.csr_matrix((npixels,npixels),dtype=np.float32)
-    FV=sparse.csr_matrix((npixels,npixels),dtype=np.float32)
+
+    FU=sparse.lil_matrix((npixels,npixels),dtype=np.float32)
+    FV=sparse.lil_matrix((npixels,npixels),dtype=np.float32)
     quadr_ov_x=np.vectorize(deriv_quadra_over_x)
     for i in range(len(S)):
         M=conv_matrix(S[i],sz)
-        #print(M)
-        #u_=np.matmul(M,np.reshape((u+du),(npixels,1),'F'))
-        #v_=np.matmul(M,np.reshape((v+dv),(npixels,1),'F'))
-        u_=sparse.csr_matrix.dot(M,np.reshape((u+du),(npixels,1),'F'))
-        v_=sparse.csr_matrix.dot(M,np.reshape((v+dv),(npixels,1),'F'))
+        
+        u_=sparse.lil_matrix.dot(M,np.reshape((u+du),(npixels,1),'F'))
+        v_=sparse.lil_matrix.dot(M,np.reshape((v+dv),(npixels,1),'F'))
 
         pp_su=quadr_ov_x(u_,1)
         pp_sv=quadr_ov_x(v_,1)
-        #print(pp_sv)
         
-        FU        = FU+ sparse.csr_matrix.dot(M.T,sparse.csr_matrix.dot(spdiags(pp_su.T, 0, npixels, npixels),M));
-        FV        = FV+ sparse.csr_matrix.dot(M.T,sparse.csr_matrix.dot(spdiags(pp_sv.T, 0, npixels, npixels),M));
+        FU        = FU+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_su.T, 0, npixels, npixels),M))
+        FV        = FV+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_sv.T, 0, npixels, npixels),M))
     
-    MM = sparse.vstack( (sparse.hstack ( ( -FU, sparse.csr_matrix((npixels,npixels)) ) )  ,  sparse.hstack( ( sparse.csr_matrix((npixels,npixels)) , -FV ) )  ))  
-    #print('MM')
-    #print(MM)
+    MM = sparse.vstack( (sparse.hstack ( ( -FU, sparse.lil_matrix((npixels,npixels)) ) )  ,  sparse.hstack( ( sparse.lil_matrix((npixels,npixels)) , -FV ) )  ))  
+
     Ix2 = Ix*Ix
     Iy2 = Iy*Iy
     Ixy = Ix*Iy
     Itx = It*Ix
     Ity = It*Iy
 
-    It = It + Ix*du+ Iy*dv;
+    It = It + Ix*du+ Iy*dv
     
     pp_d=deriv_quadra_over_x(np.reshape(It,(npixels,1),'F'),(1.5/0.03))
     
@@ -210,8 +191,7 @@ def flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda):
     dduv = spdiags(tmp.T, 0, npixels, npixels)
 
     A = sparse.vstack( (sparse.hstack ( ( duu, dduv ) )  ,  sparse.hstack( ( dduv , dvv ) )  )) - lmbda*MM
-    b=sparse.csr_matrix.dot(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) 
-    - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) ) 
+    b=sparse.lil_matrix.dot(lmbda*MM, np.vstack((np.reshape(u, (npixels,1) ,'F'), np.reshape(v, (npixels,1) ,'F') ) )) - np.vstack( (pp_d*np.reshape(Itx,(npixels,1),'F'),  pp_d*np.reshape(Ity,(npixels,1),'F') ) ) 
 
     if( ((np.max(pp_su)-np.max(pp_su)<1E-06)   ) and ((np.max(pp_sv)-np.max(pp_sv)<1E-06)   ) and ((np.max(pp_d)-np.max(pp_d)<1E-06)   ) ):
         iterative=False
@@ -226,9 +206,13 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
         du=np.zeros((u.shape)); dv=np.zeros((v.shape))
         [Ix,Iy,It]=derivatives(Image1,Image2,u,v,h,coef)
         print('deriv')
-        print(It)
-        print(Ix)
-        print(Iy)
+        #print(It)
+        print('It')
+        print(It[0:10,0:10])
+        print('Ix')
+        print(Ix[0:10,0:10])
+        print('Iy')
+        print(Iy[0:10,0:10])
         #print('iter',i,'shapes',Ix.shape)
         for j in range(max_linear_iter):
             if (alpha==1):
@@ -254,11 +238,11 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
             #print('u avant')
             #print(u)
             #u=medfilt(u,size_median_filter)
-            u=median_filter(u,size=(5,5))
+            u=median_filter(u,size=(size_median_filter,size_median_filter))
             #print('u après')
             #print(u)
             #v=medfilt(v,size_median_filter)
-            v=median_filter(v,size=(5,5))
+            v=median_filter(v,size=(size_median_filter,size_median_filter))
             du = u- u0
             dv = v- v0
             '''print('du')
@@ -281,7 +265,7 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
 
 
 #############################################################
-S=[];
+S=[]
 S.append(np.array([[1,-1]]))
 S.append(np.array([[1],[-1]]))
 
@@ -302,7 +286,7 @@ Image2= np.array([[ 1.50229  ,-1.37956  ,-0.67601 ,  0.18091  , 0.00000],
   [-0.80391 ,  0.31335 ,  0.45995 , -0.00943  , 0.00000],
  [ -0.18017 , -1.22093  , 0.84927  , 2.06008   ,0.00000],
   [ 0.00000  , 0.00000  , 0.00000 ,  0.00000  , 0.00000]])'''
-Image1=np.array([[6.74449552, 5.53346511, 8.68140734, 2.04012167, 1.7470887 ],
+'''Image1=np.array([[6.74449552, 5.53346511, 8.68140734, 2.04012167, 1.7470887 ],
        [1.35848093, 4.86814148, 8.45172817, 2.33243605, 5.19957588],
        [7.40448257, 0.43829789, 9.42031693, 9.64404467, 9.46878689],
        [7.40480588, 0.9560134 , 8.75912932, 2.98090913, 8.97988959],
@@ -312,9 +296,15 @@ Image2=np.array([[7.6243546 , 8.76405184, 0.93504855, 9.80596673, 8.81201369],
        [5.77520562, 7.52720659, 7.20116081, 0.80966906, 0.56304753],
        [2.86931799, 4.53189126, 9.24839657, 3.15723941, 2.6250291 ],
        [1.06423688, 7.17828962, 8.30585961, 1.51904165, 0.60133615],
-       [4.94036009, 8.48463488, 9.34919316, 4.0668727 , 9.53326332]])
+       [4.94036009, 8.48463488, 9.34919316, 4.0668727 , 9.53326332]])'''
 
 
+#Image1=cv2.imread(r'/home/achabib/Bureau/Secrets_of/Lorentzian/SPARSE/image1.png',0)
+#Image2=cv2.imread(r'/home/achabib/Bureau/Secrets_of/Lorentzian/SPARSE/image2.png',0)
+Image1=cv2.imread(r'/home/achabib/Bureau/Secrets_of/Lorentzian/SPARSE/Im1.png',0)
+Image2=cv2.imread(r'/home/achabib/Bureau/Secrets_of/Lorentzian/SPARSE/Im2.png',0)
+Image1=np.array(Image1,dtype=np.float32)
+Image2=np.array(Image2,dtype=np.float32)
 
 u=np.zeros((Image1.shape))
 v=np.zeros((Image1.shape))
@@ -323,17 +313,29 @@ dv=np.zeros((u.shape))'''
 
 lmbda=1
 h=np.array([[-1 ,8, 0 ,-8 ,1 ]])
-h=1/12*h
-coef=0.5
+#[1 -8 0 8 -1]/12
 
+h=h/12
+coef=0.5
 u,v=compute_flow_base(Image1,Image2,10,1,u,v,0.5,lmbda,S,5,h,coef)
-print(u)
-print(v)
+print('u')
+print(u[0:10,0:10])
+print('v')
+print(v[0:10,0:10])
 u=np.array(u,dtype=np.float32)
 v=np.array(v,dtype=np.float32)
-I=cv2.remap(Image1,u,v,cv2.INTER_CUBIC)
+
+N,M=Image1.shape
+y=np.linspace(0,N-1,N)
+x=np.linspace(0,M-1,M)
+x,y=np.meshgrid(x,y)
+x=x+u; y=y+v
+x=np.array(x,dtype=np.float32)
+y=np.array(y,dtype=np.float32)
+I=cv2.remap(np.array(Image1,dtype=np.float32),x,y,cv2.INTER_CUBIC)
 print('norm: ',np.linalg.norm(I-Image2)/np.linalg.norm(Image2))
 print('I')
-print(I)
+print(I[0:10,0:10])
 print('Image2')
-print(Image2)
+print(Image2[0:10,0:10])
+cv2.imwrite('warped.png',I)
