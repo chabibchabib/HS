@@ -17,17 +17,13 @@ def warp_image2(Image,XI,YI,h):
     XI=np.array(XI,np.float32)
     YI=np.array(YI,np.float32)
     WImage=cv2.remap(Image,XI,YI,interpolation=cv2.INTER_CUBIC)
-    '''print('warped')
-    print(WImage[0:10,0:10])'''
+
     Ix=filter2(Image, h)
     Iy=filter2(Image, h.T)
     
     Iy=cv2.remap(Iy,XI,YI,interpolation=cv2.INTER_CUBIC)   
     Ix=cv2.remap(Ix,XI,YI,interpolation=cv2.INTER_CUBIC)
-    '''print('I2x')
-    print(Ix[0:10,0:10])
-    print('I2y')
-    print(Iy[0:10,0:10])'''
+
     return [WImage,Ix,Iy]
     
 ############################################
@@ -63,21 +59,6 @@ def derivatives(Image1,Image2,u,v,h,b):
     return [Ix,Iy,It]
 ############################################################
 def conv_matrix(F,sz):
-    '''Fshape=np.array(F.shape)
-    size=sz+Fshape-1
-    size=np.array(size,np.int)
-    valid=np.ones((size[0,0],size[0,1]))
-    pad_valid = np.ones(sz+F.shape-1);
-    if(F.shape==(1,2)):
-
-        valid[:,0]=0;
-        valid[:,size[0,1]-1]=0
-        pad_valid[:,2]=0
-    elif(F.shape==(2,1)):
-        valid[0,:]=0;
-        valid[size[0,0]-1,:]=0
-        pad_valid[6,:]=0'''
-    #M=np.zeros((sz[0]*sz[1],sz[0]*sz[1])) 
     M=sparse.lil_matrix( ( sz[0]*sz[1],sz[0]*sz[1] ),dtype=np.float32)
     if( F.shape==(1,2)):
         for i in range(sz[0],sz[0]*sz[1]):      
@@ -93,15 +74,15 @@ def conv_matrix(F,sz):
                 M[i,i-1]=-1
     return M
 ########################################################
-def deriv_lorentz_over_x(x,sigma):
-     y = 2 / (2 * sigma**2 + x**2)
+def deriv_charbonnier_over_x(x,sigma,a):
+     y =2*a*(sigma**2 + x**2)**(a-1);
      return y
 def deriv_quadra_over_x(x,sigma):
     y = 2 / (sigma**2)
     return y
 ########################################################
 def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
-    ''' Using Lorentzian function '''
+    ''' Using Charbonnier function '''
     sz=np.shape(Ix)
     npixels=Ix.shape[1]*Ix.shape[0]
     
@@ -111,8 +92,8 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
         M=conv_matrix(S[i],sz)
         u_=sparse.lil_matrix.dot(M,np.reshape((u+du),(npixels,1),'F'))
         v_=sparse.lil_matrix.dot(M,np.reshape((v+dv),(npixels,1),'F'))
-        pp_su=deriv_lorentz_over_x(u_,0.03)
-        pp_sv=deriv_lorentz_over_x(v_,0.03)
+        pp_su=deriv_charbonnier_over_x(u_,0.001,0.5)
+        pp_sv=deriv_charbonnier_over_x(v_,0.001,0.5)
         
         FU        = FU+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_su.T, 0, npixels, npixels),M))
         FV        = FV+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_sv.T, 0, npixels, npixels),M))
@@ -126,7 +107,7 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
 
     It = It + Ix*du+ Iy*dv
     
-    pp_d=deriv_lorentz_over_x(np.reshape(It,(npixels,1),'F'),1.5)
+    pp_d=deriv_charbonnier_over_x(np.reshape(It,(npixels,1),'F'),0.001,0.5)
     
     tmp=pp_d*np.reshape(Ix2,(npixels,1),'F')
     duu = spdiags(tmp.T, 0, npixels, npixels)
@@ -190,7 +171,6 @@ def flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda):
     
     dduv = spdiags(tmp.T, 0, npixels, npixels)
 
-    #A = sparse.vstack( (sparse.hstack ( ( duu, dduv ) )  ,  sparse.hstack( ( dduv , dvv ) )  )) - lmbda*MM
     A = sparse.vstack( (sparse.hstack ( ( duu, dduv ) )  ,  sparse.hstack( ( dduv , dvv ) )  ))
     print('AA')
     print(A)
@@ -221,7 +201,6 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
         print(Ix[0:5,0:5])
         print('Iy')
         print(Iy[0:5,0:5])
-        #print('iter',i,'shapes',Ix.shape)
         for j in range(max_linear_iter):
             if (alpha==1):
                 [A,b,iterative]=flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda)
@@ -236,8 +215,7 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
                 [A,b,iterative]=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
             print('A')
             print(A)
-            #x=np.matmul(np.linalg.inv(A),b)
-            #x=np.linalg.solve(A,b)
+
             x=scipy.sparse.linalg.spsolve(A,b)
             print('x')
             print(x[:5])
@@ -245,35 +223,23 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
             x[x<-1]=-1
             du=np.reshape(x[0:npixels], (u.shape[0],u.shape[1]),'F' )
             dv=np.reshape(x[npixels:2*npixels], (u.shape[0],u.shape[1]),'F' )
-            print('dv')
-            print(dv[:5,:5])
+    
             u0=u; v0=v
             u=u+du;v=v+dv
-            #print('u avant')
-            #print(u)
-            #u=medfilt(u,size_median_filter)
-            #print('u après')
-            #print(u)
-            #v=medfilt(v,size_median_filter)
+         
             if (size_median_filter !=0):
                 u=median_filter(u,size=(size_median_filter,size_median_filter))
                 v=median_filter(v,size=(size_median_filter,size_median_filter))
             du = u- u0
             dv = v- v0
-            '''print('du')
-            print(du)
-            print('dv')
-            print(dv)'''
+
             u= u0
             v=v0
             
         print('it',i)
         u = u + du
         v = v + dv
-        '''print('u')
-        print(u)
-        print('v')
-        print(v)'''
+
 
         
     return [u,v]
