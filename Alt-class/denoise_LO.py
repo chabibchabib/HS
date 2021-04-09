@@ -33,21 +33,28 @@ def denoise_LO (un, median_filter_size, lambda23, niters):
     tmp = np.matlib.repmat( tmp, un.shape[0]*un.shape[1],1)/lambda23
     tmp=tmp.T
     tmp = np.matlib.repmat( np.reshape(un,(1,un.shape[0]*un.shape[1]),'F') ,int(2*n+1), 1)+tmp
-    print(tmp)
+    #print(tmp)
 
     uo  = un
     for i in range(niters):
         u=np.pad(uo,((hfsize,hfsize),(hfsize,hfsize)),mode='symmetric')
         u2 = im2col(u, (mfsize,mfsize))
         #print(u)
+        u2 = np.vstack((u2[:math.floor(mfsize*mfsize/2),:], u2[math.ceil(mfsize*mfsize/2): u2.shape[0], :]))
+
+        uo=np.reshape(                      np.median( np.vstack(  (u2,tmp))                     ,0)                                                                                               , (un.shape[0],un.shape[1]),'F'      )
 
 
     return uo
 
-#un=np.random.rand(3,4)
+'''un=np.random.rand(3,4)
 un=np.array([[1 ,2 ,3 ,4 ], [5 ,6 ,7 ,8 ] ,[9 ,10 ,11 ,12 ],[13, 14,15,16]])
-median_filter_size=2
-lambda23=1
-niters=1
+un=np.array([[1 ,2 ,3 ], [4 ,5 ,6]])
+un=np.array([[0.8147  ,   0.1270   ,  0.6324], [0.9058   ,  0.9134   , 0.0975]])
+
+    
+median_filter_size=3 #2
+lambda23=100
+niters=10
 u0=denoise_LO (un, median_filter_size, lambda23, niters)
-print(u0)
+print(u0)'''

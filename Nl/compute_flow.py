@@ -50,21 +50,14 @@ def resample_flow_unequal(u,v,sz,ordre_inter):
 
 
 ############################################################
-def compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, pyram_levels,factor,spacing,ordre_inter, alpha,lmbda, size_median_filter,h,coef,S,max_linear_iter,max_iter,lambda2,lambda3):
+def compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, pyram_levels,factor,spacing,ordre_inter, alpha,lmbda, size_median_filter,h,coef,S,max_linear_iter,max_iter):
     Im1,Imm1=ri.decompo_texture(Im1, 1/8, 100, 0.95, False)
     Im2,Imm1=ri.decompo_texture(Im2, 1/8, 100, 0.95, False)
 
     P1,P2=compute_image_pyram(Im1,Im2,1/factor,pyram_levels,math.sqrt(spacing)/math.sqrt(2))
     P1_gnc,P2_gnc=compute_image_pyram(Im1,Im2,1/gnc_factor,gnc_pyram_levels,math.sqrt(gnc_spacing)/math.sqrt(2))
-    uhat=u; vhat=v; remplacement=True;
-    itersLO=1;
     #print(P2[0][:5,:5])
     for i in range(iter_gnc):
-        if i==(iter_gnc-1):
-            remplacement=False
-        else:
-            remplacement=True
-
         if i==0:
             py_lev=pyram_levels
         else:
@@ -80,8 +73,6 @@ def compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, p
                 sz= Image1.shape
             
             u,v=resample_flow_unequal(u,v,sz,ordre_inter)
-            uhat,vhat=resample_flow_unequal(uhat,vhat,sz,ordre_inter)
-            print('shapesé,',u.shape,uhat.shape)
 
             if (lev==0) and (i==iter_gnc) :    #&& this.noMFlastlevel
                 median_filter_size =0
@@ -96,8 +87,7 @@ def compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, p
             print(Image1[0:5,0:5])
             print('small images 2')
             print(Image2.shape)
-            #u,v=fo.compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,median_filter_size,h,coef)
-            u,v,uhat,vhat=fo.compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,median_filter_size,h,coef,uhat,vhat,itersLO,lambda2,lambda3,remplacement)
+            u,v=fo.compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,median_filter_size,h,coef)
             print('u')
             print(u[0:5,0:5])
             print('v')
@@ -108,10 +98,7 @@ def compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, p
                 new_alpha  = 1 - (i+1)/ (iter_gnc)
                 alpha = min(alpha, new_alpha)
                 alpha = max(0,alpha)
-            print('iteration',iter_gnc)
 
-    u=uhat
-    v=vhat
     return u,v
 
             
@@ -124,8 +111,8 @@ def compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, p
 
 
 
-#Im1=np.loadtxt('Im1.txt',dtype=np.float32)
-#Im2=np.loadtxt('Im2.txt',dtype=np.float32)
+'''Im1=np.loadtxt('Im1.txt',dtype=np.float32)
+Im2=np.loadtxt('Im2.txt',dtype=np.float32)'''
 Im1=cv2.imread('Im1.png',0)
 Im2=cv2.imread('Im2.png',0)
 Im1=np.array(Im1,dtype=np.float32)
@@ -142,8 +129,7 @@ factor=2
 spacing=2
 ordre_inter=1
 alpha=1
-lmbda=3
-lambda2=1e-1 ; lambda3=1
+lmbda=5
 size_median_filter=5
 h=np.array([[-1 ,8, 0 ,-8 ,1 ]]); h=h/12
 coef=0.5
@@ -164,10 +150,8 @@ with open('Im2.txt','wb') as f:
     for line in mat:
         np.savetxt(f, line, fmt='%.2f')'''
 pyram_levels=ri.compute_auto_pyramd_levels(Im1,spacing)
-#u,v=compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, pyram_levels,factor,spacing,ordre_inter,
-#alpha,lmbda, size_median_filter,h,coef,S,max_linear_iter,max_iter)
-u,v=compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, pyram_levels,factor,spacing,ordre_inter, 
-alpha,lmbda, size_median_filter,h,coef,S,max_linear_iter,max_iter,lambda2,lambda3)
+u,v=compute_flow(Im1,Im2,u,v,iter_gnc,gnc_pyram_levels,gnc_factor,gnc_spacing, pyram_levels,factor,spacing,ordre_inter,
+ alpha,lmbda, size_median_filter,h,coef,S,max_linear_iter,max_iter)
 
 print('Im1')
 print(Im1[0:5,0:5])
@@ -190,6 +174,6 @@ y2=np.array(y2,dtype=np.float32)
 I=cv2.remap(np.array(Im1,dtype=np.float32),x2,y2,cv2.INTER_LINEAR)
 norme=np.linalg.norm(I-Im2)/np.linalg.norm(Im2)
 print(norme)
-cv2.imwrite('I_3.png',I)
+cv2.imwrite('I_2.png',I)
 
 print(I[0:5,0:5])

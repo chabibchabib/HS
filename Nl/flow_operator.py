@@ -4,14 +4,11 @@ from numpy.core.numeric import zeros_like
 import scipy.ndimage
 import cv2
 from math import ceil,floor
-import math
 from scipy.ndimage.filters import convolve as filter2
 from scipy.sparse import spdiags
 from scipy.signal import medfilt
 from scipy.ndimage import median_filter
 import scipy.sparse as sparse
-import denoise_LO as lo
-import time
 ###########################################################
 def warp_image2(Image,XI,YI,h):
  
@@ -114,8 +111,8 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
         M=conv_matrix(S[i],sz)
         u_=sparse.lil_matrix.dot(M,np.reshape((u+du),(npixels,1),'F'))
         v_=sparse.lil_matrix.dot(M,np.reshape((v+dv),(npixels,1),'F'))
-        pp_su=deriv_charbonnier_over_x(u_,0.001,0.45)
-        pp_sv=deriv_charbonnier_over_x(v_,0.001,0.45)
+        pp_su=deriv_charbonnier_over_x(u_,0.001,0.5)
+        pp_sv=deriv_charbonnier_over_x(v_,0.001,0.5)
         
         FU        = FU+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_su.T, 0, npixels, npixels),M))
         FV        = FV+ sparse.lil_matrix.dot(M.T,sparse.lil_matrix.dot(spdiags(pp_sv.T, 0, npixels, npixels),M))
@@ -130,7 +127,7 @@ def flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda):
     It = It + Ix*du+ Iy*dv
     
     #pp_d=deriv_lorentz_over_x(np.reshape(It,(npixels,1),'F'),1.5)
-    pp_d=deriv_charbonnier_over_x(np.reshape(It,(npixels,1),'F'),0.001,0.45)
+    pp_d=deriv_charbonnier_over_x(np.reshape(It,(npixels,1),'F'),1.5)
     
     tmp=pp_d*np.reshape(Ix2,(npixels,1),'F')
     duu = spdiags(tmp.T, 0, npixels, npixels)
@@ -210,16 +207,21 @@ def flow_operator_quadr(u,v, du,dv, It, Ix, Iy,S,lmbda):
         iterative=True
     return [A,b,iterative]
 #############################################################
-def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,size_median_filter,h,coef,uhat,vhat,itersLO,lambda2,lambda3,remplacement):
+def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,size_median_filter,h,coef):
     npixels=u.shape[0]*u.shape[1]
     u0=np.zeros((u.shape)); v0=np.zeros((u.shape));
-
-    Lambdas=np.logspace(math.log(1e-4), math.log(lambda2),max_iter)
-    lambda2_tmp=Lambdas[0] 
     for i in range(max_iter):
         du=np.zeros((u.shape)); dv=np.zeros((v.shape))
        
         [Ix,Iy,It]=derivatives(Image1,Image2,u,v,h,coef)
+        print('deriv')
+        #print(It)
+        print('It')
+        print(It[0:5,0:5])
+        print('Ix')
+        print(Ix[0:5,0:5])
+        print('Iy')
+        print(Iy[0:5,0:5])
         #print('iter',i,'shapes',Ix.shape)
         for j in range(max_linear_iter):
             if (alpha==1):
@@ -235,21 +237,11 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
                 [A,b,iterative]=flow_operator(u,v, du,dv, It, Ix, Iy,S,lmbda)
             print('A')
             print(A)
-
-            '''tmpu=deriv_charbonnier_over_x(u-uhat,0.001,0.5)
-            tmpv=deriv_charbonnier_over_x(v-vhat,0.001,0.5)
-            tmpA=spdiags(np.reshape(np.hstack((tmpu,tmpv)),(1,A.shape[0]*A.shape[1]),'F'),0,A.shape[0],A.shape[1])'''
-            tmp0=np.reshape( np.hstack((u-uhat,v-vhat)) , (1,2*u.shape[0]*u.shape[1]) ,'F')
-            tmp1=deriv_charbonnier_over_x(tmp0,0.001,0.5)
-            
-            tmpA=spdiags(tmp1,0,A.shape[0],A.shape[1])
-            A= A + lambda2_tmp*tmpA
-            b=b - lambda2_tmp*tmp1.T*tmp0.T
-            
+            #x=np.matmul(np.linalg.inv(A),b)
+            #x=np.linalg.solve(A,b)
             x=scipy.sparse.linalg.spsolve(A,b)
-
             print('x')
-            print('xshape',x.shape)
+            print(x[:5])
             x[x>1]=1
             x[x<-1]=-1
             du=np.reshape(x[0:npixels], (u.shape[0],u.shape[1]),'F' )
@@ -279,22 +271,13 @@ def  compute_flow_base(Image1,Image2,max_iter,max_linear_iter,u,v,alpha,lmbda,S,
         print('it',i)
         u = u + du
         v = v + dv
-
-        uhat=lo.denoise_LO (u, size_median_filter, lambda2_tmp/lambda3, itersLO)
-        vhat=lo.denoise_LO (v, size_median_filter, lambda2_tmp/lambda3, itersLO)
         '''print('u')
         print(u)
         print('v')
         print(v)'''
-        if remplacement==True:
-            u=uhat
-            v=vhat
-        if i!=max_iter-1:
-
-            lambda2_tmp=Lambdas[i+1]
 
         
-    return [u,v,uhat,vhat]
+    return [u,v]
 
 
 #############################################################
